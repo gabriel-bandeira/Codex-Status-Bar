@@ -13,18 +13,178 @@ import ServiceManagement
 
 @main
 struct Codex_Status_BarApp: App {
-    @StateObject private var codexManager = CodexManager()
+    @NSApplicationDelegateAdaptor(CodexStatusBarAppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            CodexStatusMenu(data: codexManager.data, lastErrorMessage: codexManager.lastErrorMessage)
-        } label: {
-            Text(codexManager.data.menuBarTitle)
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
-                .multilineTextAlignment(.center)
-                .lineSpacing(-2)
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.menu)
+    }
+}
+
+@MainActor
+final class CodexStatusBarAppDelegate: NSObject, NSApplicationDelegate {
+    private let codexManager = CodexManager()
+    private var statusItem: NSStatusItem?
+    private var cancellables: Set<AnyCancellable> = []
+    private var launchAtLoginErrorMessage: String?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let statusItem = NSStatusBar.system.statusItem(withLength: 30)
+        self.statusItem = statusItem
+
+        refreshStatusItem()
+
+        codexManager.$data
+            .sink { [weak self] _ in
+                self?.refreshStatusItem()
+            }
+            .store(in: &cancellables)
+
+        codexManager.$lastErrorMessage
+            .sink { [weak self] _ in
+                self?.refreshStatusItem()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func refreshStatusItem() {
+        guard let statusItem,
+              let button = statusItem.button else {
+            return
+        }
+
+        button.attributedTitle = statusTitle(for: codexManager.data)
+        button.toolTip = "Codex Status Bar"
+        statusItem.menu = makeMenu()
+    }
+
+    private func statusTitle(for data: CodexData) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        paragraphStyle.minimumLineHeight = 8
+        paragraphStyle.maximumLineHeight = 8
+
+        return NSAttributedString(
+            string: data.menuBarTitle,
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .medium),
+                .paragraphStyle: paragraphStyle,
+                .baselineOffset: -1
+            ]
+        )
+    }
+
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        let data = codexManager.data
+
+        menu.addItem(disabledTitle: "Restante 5h: \(formattedPercentage(data.remainingPercentage5h))")
+        menu.addItem(disabledTitle: "Renova em \(data.timeUntil5hRenewal)")
+        menu.addItem(disabledTitle: "Horario local: \(data.local5hRenewalTime)")
+        menu.addItem(.separator())
+        menu.addItem(disabledTitle: "Restante semanal: \(formattedPercentage(data.remainingPercentageWeekly))")
+        menu.addItem(disabledTitle: "Renova em \(data.timeUntilWeeklyRenewal)")
+        menu.addItem(disabledTitle: "Horario local: \(data.localWeeklyRenewalTime)")
+        menu.addItem(.separator())
+        menu.addItem(disabledTitle: "Fonte: \(data.sourceDescription)")
+
+        if let updatedAt = data.updatedAt {
+            menu.addItem(disabledTitle: "Atualizado em \(Self.formattedUpdateDate(updatedAt))")
+        }
+
+        if let staleSeconds = data.staleSeconds {
+            menu.addItem(disabledTitle: "Dados locais: atualizado ha \(Self.formattedStaleTime(staleSeconds))")
+        }
+
+        if let lastErrorMessage = codexManager.lastErrorMessage {
+            menu.addItem(.separator())
+            menu.addItem(disabledTitle: lastErrorMessage)
+        }
+
+        menu.addItem(.separator())
+
+        let launchItem = NSMenuItem(
+            title: "Abrir ao iniciar",
+            action: #selector(toggleLaunchAtLogin(_:)),
+            keyEquivalent: ""
+        )
+        launchItem.target = self
+        launchItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(launchItem)
+
+        if let launchAtLoginErrorMessage {
+            menu.addItem(disabledTitle: launchAtLoginErrorMessage)
+        }
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(
+            title: "Fechar App",
+            action: #selector(quitApp),
+            keyEquivalent: "q"
+        )
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        return menu
+    }
+
+    private func formattedPercentage(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0))) + "%"
+    }
+
+    private static func formattedStaleTime(_ seconds: Int) -> String {
+        if seconds < 60 {
+            return "\(seconds)s"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "\(minutes)m"
+        }
+
+        return "\(minutes / 60)h"
+    }
+
+    private static func formattedUpdateDate(_ date: Date) -> String {
+        date.formatted(
+            .dateTime
+                .year()
+                .month(.twoDigits)
+                .day(.twoDigits)
+                .hour(.twoDigits(amPM: .omitted))
+                .minute(.twoDigits)
+                .second(.twoDigits)
+        )
+    }
+
+    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+
+            launchAtLoginErrorMessage = nil
+        } catch {
+            launchAtLoginErrorMessage = "Nao foi possivel alterar inicio automatico"
+        }
+
+        refreshStatusItem()
+    }
+
+    @objc private func quitApp() {
+        NSApplication.shared.terminate(nil)
+    }
+}
+
+private extension NSMenu {
+    func addItem(disabledTitle title: String) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        addItem(item)
     }
 }
 
