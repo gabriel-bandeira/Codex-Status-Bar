@@ -393,6 +393,7 @@ enum CodexRolloutError: LocalizedError {
     }
 }
 
+#if DEBUG
 #Preview {
     CodexStatusMenu(
         data: CodexData(percentage5h: 45, timeUntil5hRenewal: "02:15:00", local5hRenewalTime: "23:15",
@@ -400,3 +401,4 @@ enum CodexRolloutError: LocalizedError {
         lastErrorMessage: nil
     )
 }
+#endif
