@@ -28,6 +28,36 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Build local app bundle
+        run: |
+          rm -rf build-output artifacts
+          xcodebuild \
+            -project "Codex Status Bar.xcodeproj" \
+            -scheme "Codex Status Bar" \
+            -configuration Release \
+            -destination "platform=macOS,arch=arm64" \
+            -derivedDataPath "$PWD/build-output/DerivedData" \
+            SYMROOT="$PWD/build-output/Products" \
+            INFOPLIST_KEY_LSUIElement=YES \
+            ENABLE_APP_SANDBOX=NO \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY=- \
+            build
+
+      - name: Package local app bundle
+        run: |
+          mkdir -p artifacts
+          ditto -c -k --keepParent \
+            "build-output/Products/Release/Codex Status Bar.app" \
+            "artifacts/Codex-Status-Bar-local-arm64.zip"
+
+      - name: Upload local build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Codex-Status-Bar-local-arm64
+          path: artifacts/Codex-Status-Bar-local-arm64.zip
+          if-no-files-found: error
+
       - name: Analyze
         run: |
           xcodebuild \

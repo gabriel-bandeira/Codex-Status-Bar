@@ -1,4 +1,7 @@
 Build/
 DerivedData/
+build-output/
+artifacts/
+dist/*.zip
 .DS_Store
 xcuserdata/
