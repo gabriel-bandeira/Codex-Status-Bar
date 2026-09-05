@@ -9,6 +9,7 @@ import SwiftUI
 import AppKit
 import Combine
 import Foundation
+import ServiceManagement
 
 @main
 struct Codex_Status_BarApp: App {
@@ -129,6 +130,9 @@ struct CodexStatusMenu: View {
     let data: CodexData
     let lastErrorMessage: String?
 
+    @State private var launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLoginErrorMessage: String?
+
     var body: some View {
         Text("Consumo 5h: \(data.percentage5h.formatted(.number.precision(.fractionLength(0))))%")
         Text("Renova em \(data.timeUntil5hRenewal)")
@@ -147,10 +151,41 @@ struct CodexStatusMenu: View {
 
         Divider()
 
+        Toggle("Abrir ao iniciar", isOn: Binding(
+            get: {
+                launchAtLoginEnabled
+            },
+            set: { isEnabled in
+                updateLaunchAtLogin(isEnabled)
+            }
+        ))
+
+        if let launchAtLoginErrorMessage {
+            Text(launchAtLoginErrorMessage)
+        }
+
+        Divider()
+
         Button("Fechar App") {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
+    }
+
+    private func updateLaunchAtLogin(_ isEnabled: Bool) {
+        do {
+            if isEnabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+
+            launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
+            launchAtLoginErrorMessage = nil
+        } catch {
+            launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
+            launchAtLoginErrorMessage = "Nao foi possivel alterar inicio automatico"
+        }
     }
 }
 
