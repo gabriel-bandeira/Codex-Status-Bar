@@ -19,7 +19,12 @@ struct Codex_Status_BarApp: App {
         MenuBarExtra {
             CodexStatusMenu(data: codexManager.data, lastErrorMessage: codexManager.lastErrorMessage)
         } label: {
-            Text(codexManager.data.menuBarTitle)
+            VStack(spacing: -2) {
+                Text(codexManager.data.fiveHourMenuBarTitle)
+                Text(codexManager.data.weeklyMenuBarTitle)
+            }
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .lineLimit(1)
         }
         .menuBarExtraStyle(.menu)
     }
@@ -34,6 +39,7 @@ struct CodexData: Decodable {
     let localWeeklyRenewalTime: String
     let staleSeconds: Int?
     let updatedAt: Date?
+    let sourceDescription: String
 
     static let placeholder = CodexData(
         remainingPercentage5h: 0,
@@ -43,11 +49,16 @@ struct CodexData: Decodable {
         timeUntilWeeklyRenewal: "--",
         localWeeklyRenewalTime: "--/-- --:--",
         staleSeconds: nil,
-        updatedAt: nil
+        updatedAt: nil,
+        sourceDescription: "Aguardando dados"
     )
 
-    var menuBarTitle: String {
-        "5h \(formattedPercentage(remainingPercentage5h)) | Sem \(formattedPercentage(remainingPercentageWeekly))"
+    var fiveHourMenuBarTitle: String {
+        formattedPercentage(remainingPercentage5h)
+    }
+
+    var weeklyMenuBarTitle: String {
+        formattedPercentage(remainingPercentageWeekly)
     }
 
     private func formattedPercentage(_ value: Double) -> String {
@@ -61,7 +72,13 @@ struct CodexLimitWindow {
 }
 
 extension CodexData {
-    nonisolated init(fiveHour: CodexLimitWindow, weekly: CodexLimitWindow, staleSeconds: Int?, updatedAt: Date) {
+    nonisolated init(
+        fiveHour: CodexLimitWindow,
+        weekly: CodexLimitWindow,
+        staleSeconds: Int?,
+        updatedAt: Date,
+        sourceDescription: String
+    ) {
         self.init(
             remainingPercentage5h: Self.remainingPercentage(fromUsedPercentage: fiveHour.usedPercent),
             timeUntil5hRenewal: fiveHour.resetsIn,
@@ -70,7 +87,8 @@ extension CodexData {
             timeUntilWeeklyRenewal: weekly.resetsIn,
             localWeeklyRenewalTime: weekly.localRenewalTime,
             staleSeconds: staleSeconds,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            sourceDescription: sourceDescription
         )
     }
 
@@ -154,8 +172,11 @@ struct CodexStatusMenu: View {
         Text("Renova em \(data.timeUntilWeeklyRenewal)")
         Text("Horario local: \(data.localWeeklyRenewalTime)")
 
+        Divider()
+
+        Text("Fonte: \(data.sourceDescription)")
+
         if let updatedAt = data.updatedAt {
-            Divider()
             Text("Atualizado em \(Self.formattedUpdateDate(updatedAt))")
         }
 
@@ -310,7 +331,13 @@ struct CodexAppServerProvider {
             throw CodexAppServerError.missingRateLimits
         }
 
-        return CodexData(fiveHour: fiveHour, weekly: weekly, staleSeconds: nil, updatedAt: snapshotDate)
+        return CodexData(
+            fiveHour: fiveHour,
+            weekly: weekly,
+            staleSeconds: nil,
+            updatedAt: snapshotDate,
+            sourceDescription: "Codex app-server"
+        )
     }
 
     private nonisolated func codexExecutableURL() throws -> URL {
@@ -553,7 +580,8 @@ struct CodexRolloutProvider {
             fiveHour: fiveHour,
             weekly: weekly,
             staleSeconds: staleSeconds,
-            updatedAt: latestSnapshot.eventDate
+            updatedAt: latestSnapshot.eventDate,
+            sourceDescription: "Snapshot local"
         )
     }
 
@@ -725,7 +753,8 @@ enum CodexRolloutError: LocalizedError {
     CodexStatusMenu(
         data: CodexData(remainingPercentage5h: 25, timeUntil5hRenewal: "02:15:00", local5hRenewalTime: "23:15",
                         remainingPercentageWeekly: 48, timeUntilWeeklyRenewal: "2 dias",
-                        localWeeklyRenewalTime: "28/10 14:00", staleSeconds: 120, updatedAt: Date()),
+                        localWeeklyRenewalTime: "28/10 14:00", staleSeconds: 120, updatedAt: Date(),
+                        sourceDescription: "Snapshot local"),
         lastErrorMessage: nil
     )
 }

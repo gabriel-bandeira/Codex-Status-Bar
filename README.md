@@ -2,13 +2,14 @@
 
 Aplicativo nativo para macOS que mostra os limites restantes do Codex diretamente na barra de menus.
 
-O app exibe dois percentuais restantes lado a lado:
+O app exibe dois percentuais restantes empilhados para ocupar menos espaco na barra de menus:
 
 ```text
-5h 25% | Sem 48%
+25%
+48%
 ```
 
-O primeiro valor representa o limite restante da janela de 5 horas. O segundo representa o limite semanal restante.
+O valor de cima representa o limite restante da janela de 5 horas. O valor de baixo representa o limite semanal restante.
 
 ## Como Funciona
 
@@ -24,7 +25,7 @@ Internamente, o app chama o metodo JSON-RPC:
 account/rateLimits/read
 ```
 
-Se o executavel `codex` nao estiver disponivel ou a chamada direta falhar, o app usa fallback lendo snapshots locais em:
+Se o executavel `codex` nao estiver instalado ou nao estiver disponivel para o app, a chamada direta nao funciona. Nesse caso, o app usa fallback lendo snapshots locais em:
 
 ```text
 ~/.codex/sessions
@@ -49,11 +50,12 @@ No menu suspenso, o app mostra:
 - tempo restante ate renovar a janela semanal;
 - horario local da renovacao semanal;
 - data e hora local exata da informacao exibida;
+- fonte da informacao: `Codex app-server` ou `Snapshot local`;
 - idade do snapshot, quando o app estiver usando fallback local;
 - opcao `Abrir ao iniciar`;
 - opcao `Fechar App`.
 
-Importante: quando a leitura vem de `codex app-server`, ela representa a informacao consultada naquele momento. Quando vem dos arquivos `rollout-*.jsonl`, ela representa o horario do snapshot local mostrado no menu como `Atualizado em ...`.
+Importante: quando a leitura vem de `codex app-server`, ela representa a informacao consultada naquele momento. Quando vem dos arquivos `rollout-*.jsonl`, ela representa o horario do snapshot local mostrado no menu como `Atualizado em ...`. Se o menu mostrar `Fonte: Snapshot local`, os dados podem estar atrasados em relacao ao `/status` do Codex.
 
 ## Consome Tokens?
 
@@ -138,7 +140,7 @@ xcodebuild \
 ## Limitacoes Atuais
 
 - A build pronta e apenas arm64.
-- A leitura direta depende do executavel `codex` estar instalado em um caminho que o app consiga encontrar.
+- A leitura direta depende do executavel `codex` estar instalado em um caminho que o app consiga encontrar, como `/opt/homebrew/bin/codex`, `/usr/local/bin/codex`, `~/.local/bin/codex` ou `~/.codex/bin/codex`.
 - Com App Sandbox ativo, o app pode nao conseguir executar `codex app-server` nem ler `~/.codex/sessions`.
 - Ainda nao ha tela para escolher a pasta `.codex` e salvar permissao persistente.
 
