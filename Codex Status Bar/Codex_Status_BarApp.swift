@@ -19,12 +19,10 @@ struct Codex_Status_BarApp: App {
         MenuBarExtra {
             CodexStatusMenu(data: codexManager.data, lastErrorMessage: codexManager.lastErrorMessage)
         } label: {
-            VStack(spacing: -2) {
-                Text(codexManager.data.fiveHourMenuBarTitle)
-                Text(codexManager.data.weeklyMenuBarTitle)
-            }
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .lineLimit(1)
+            Text(codexManager.data.menuBarTitle)
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .multilineTextAlignment(.center)
+                .lineSpacing(-2)
         }
         .menuBarExtraStyle(.menu)
     }
@@ -59,6 +57,10 @@ struct CodexData: Decodable {
 
     var weeklyMenuBarTitle: String {
         formattedPercentage(remainingPercentageWeekly)
+    }
+
+    var menuBarTitle: String {
+        "\(fiveHourMenuBarTitle)\n\(weeklyMenuBarTitle)"
     }
 
     private func formattedPercentage(_ value: Double) -> String {
