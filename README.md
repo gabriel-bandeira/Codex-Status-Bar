@@ -144,6 +144,10 @@ xcodebuild \
 - With App Sandbox enabled, the app may not be able to execute `codex app-server` or read `~/.codex/sessions`.
 - There is no UI yet to choose the `.codex` folder and store persistent permission.
 
+## License
+
+This project is licensed under the BSD Zero Clause License. You can use, copy, modify, and distribute it for personal or commercial purposes.
+
 ## Possible Next Steps
 
 - Add a `.codex` folder picker with a security-scoped bookmark.
