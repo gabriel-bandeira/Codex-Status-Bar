@@ -1,128 +1,128 @@
 # Codex Status Bar
 
-Aplicativo nativo para macOS que mostra os limites restantes do Codex diretamente na barra de menus.
+Native macOS menu bar utility that shows the remaining Codex usage limits at a glance.
 
-O app exibe dois percentuais restantes empilhados para ocupar menos espaco na barra de menus:
+The menu bar item shows two stacked percentages to keep the status item compact:
 
 ```text
 25%
 48%
 ```
 
-O valor de cima representa o limite restante da janela de 5 horas. O valor de baixo representa o limite semanal restante.
+The top value is the remaining 5-hour limit. The bottom value is the remaining weekly limit.
 
-## Como Funciona
+## How It Works
 
-O app nao usa API HTTP externa nesta versao. A cada 30 segundos, ele tenta ler os limites diretamente do Codex usando:
+The app does not use an external HTTP API. Every 30 seconds, it first tries to read the latest limits directly from Codex with:
 
 ```text
 codex app-server
 ```
 
-Internamente, o app chama o metodo JSON-RPC:
+The app sends this JSON-RPC method:
 
 ```text
 account/rateLimits/read
 ```
 
-Se o executavel `codex` nao estiver instalado ou nao estiver disponivel para o app, a chamada direta nao funciona. Nesse caso, o app usa fallback lendo snapshots locais em:
+If the `codex` executable is not installed or cannot be reached by the app, it falls back to local Codex session snapshots in:
 
 ```text
 ~/.codex/sessions
 ```
 
-Nesse fallback, ele:
+In fallback mode, the app:
 
-1. Procura arquivos recentes `rollout-*.jsonl`.
-2. Le os snapshots mais novos.
-3. Busca o objeto `rate_limits`.
-4. Mapeia `primary` como limite de 5 horas.
-5. Mapeia `secondary` como limite semanal.
-6. Converte `used_percent` em percentual restante usando `100 - used_percent`.
-7. Atualiza os percentuais na barra de menus.
+1. Finds recent `rollout-*.jsonl` files.
+2. Reads the newest snapshots.
+3. Finds the `rate_limits` object.
+4. Maps `primary` to the 5-hour limit.
+5. Maps `secondary` to the weekly limit.
+6. Converts `used_percent` into remaining percentage with `100 - used_percent`.
+7. Updates the menu bar item.
 
-No menu suspenso, o app mostra:
+The dropdown menu shows:
 
-- percentual restante nas proximas 5 horas;
-- tempo restante ate renovar a janela de 5 horas;
-- horario local da renovacao de 5 horas;
-- percentual restante na semana;
-- tempo restante ate renovar a janela semanal;
-- horario local da renovacao semanal;
-- data e hora local exata da informacao exibida;
-- fonte da informacao: `Codex app-server` ou `Snapshot local`;
-- idade do snapshot, quando o app estiver usando fallback local;
-- opcao `Abrir ao iniciar`;
-- opcao `Fechar App`.
+- 5-hour remaining percentage;
+- time until the 5-hour window renews;
+- local 5-hour renewal time;
+- weekly remaining percentage;
+- time until the weekly window renews;
+- local weekly renewal time;
+- exact local timestamp for the displayed data;
+- data source: `Codex app-server` or `Local snapshot`;
+- snapshot age when fallback mode is used;
+- `Open at Login`;
+- `Quit App`.
 
-Importante: quando a leitura vem de `codex app-server`, ela representa a informacao consultada naquele momento. Quando vem dos arquivos `rollout-*.jsonl`, ela representa o horario do snapshot local mostrado no menu como `Atualizado em ...`. Se o menu mostrar `Fonte: Snapshot local`, os dados podem estar atrasados em relacao ao `/status` do Codex.
+When the source is `Codex app-server`, the displayed data is from a live Codex limit read. When the source is `Local snapshot`, the data refers to the local snapshot timestamp shown as `Updated at ...` and may be older than the current `/status` output in Codex.
 
-## Consome Tokens?
+## Does It Use Codex Tokens?
 
-O app nao envia prompts, nao inicia uma conversa e nao pede geracao de texto ao modelo.
+The app does not send prompts, start conversations, or ask a model to generate text.
 
-A leitura direta usa `account/rateLimits/read` no `codex app-server`, que consulta metadados de limite da conta. O fallback apenas le arquivos locais `rollout-*.jsonl`. Portanto, a expectativa e que o app nao consuma tokens do Codex; ele apenas consulta ou reaproveita informacoes de limite ja registradas.
+The live read uses `account/rateLimits/read` through `codex app-server`, which reads account limit metadata. The fallback only reads local `rollout-*.jsonl` files. The expected behavior is that the app does not consume Codex tokens; it only reads or reuses limit information.
 
-## Instalar Build Local
+## Install the Local Build
 
-Existe uma build local pronta em:
+A local build is included at:
 
 ```text
 dist/Codex-Status-Bar-local-arm64.zip
 ```
 
-Essa build e para Macs Apple Silicon.
+This build is for Apple Silicon Macs.
 
-Para usar:
+To install it:
 
-1. Baixe `dist/Codex-Status-Bar-local-arm64.zip`.
-2. Extraia o arquivo.
-3. Mova `Codex Status Bar.app` para `/Applications`.
-4. Abra o app com botao direito > `Open` na primeira execucao.
-5. Se o macOS bloquear, va em `System Settings > Privacy & Security` e clique em `Open Anyway`.
-6. Depois de abrir, use o menu da barra de menus e ative `Abrir ao iniciar`.
+1. Download `dist/Codex-Status-Bar-local-arm64.zip`.
+2. Extract the archive.
+3. Move `Codex Status Bar.app` to `/Applications`.
+4. Right-click the app and choose `Open` the first time.
+5. If macOS blocks the app, open `System Settings > Privacy & Security` and click `Open Anyway`.
+6. After the app opens, use the menu bar dropdown and enable `Open at Login`.
 
-## Abrir Automaticamente ao Ligar o Mac
+## Launch at Login
 
-O menu do app possui a opcao:
+The app menu includes:
 
 ```text
-Abrir ao iniciar
+Open at Login
 ```
 
-Ao ativar essa opcao, o app usa `SMAppService.mainApp` para registrar o proprio aplicativo como item de inicio do macOS. Ele passa a aparecer em:
+When enabled, the app uses `SMAppService.mainApp` to register itself as a macOS login item. It appears in:
 
 ```text
 System Settings > General > Login Items
 ```
 
-Voce pode desativar pelo proprio menu do app ou pelos Ajustes do Sistema.
+You can disable it from the app menu or from System Settings.
 
-## Sobre Assinatura e Gatekeeper
+## Signing and Gatekeeper
 
-Esta build nao e notarizada pela Apple e nao usa Developer ID, porque isso exige uma conta paga do Apple Developer Program.
+This build is not notarized by Apple and does not use Developer ID, because Developer ID requires a paid Apple Developer Program membership.
 
-Ela e uma build local assinada ad-hoc. Isso significa:
+It is a locally signed ad-hoc build. That means:
 
-- funciona bem para uso pessoal/hobbista;
-- o macOS pode bloquear a primeira abertura;
-- outro Mac precisa confiar manualmente no app;
-- nao ha revisao da App Store;
-- nao ha notarizacao da Apple.
+- it is suitable for personal and hobby use;
+- macOS may block the first launch;
+- another Mac needs to trust the app manually;
+- there is no App Store review;
+- there is no Apple notarization.
 
-Sem Developer ID, o fluxo esperado e aceitar manualmente o app na primeira execucao usando `Open Anyway` em `Privacy & Security`.
+Without Developer ID, the expected flow is to manually approve the app on first launch with `Open Anyway` in `Privacy & Security`.
 
-## Build Local Pelo Xcode
+## Build Locally with Xcode
 
-Para gerar uma build local pelo Xcode:
+To create a local build with Xcode:
 
-1. Abra o projeto no Xcode.
-2. Selecione o target `Codex Status Bar`.
-3. Confirme que `Application is agent (UIElement)` / `LSUIElement` esta como `YES`.
-4. Para uso local chamando `codex app-server` e lendo `~/.codex/sessions`, desative `App Sandbox` ou implemente permissao por pasta com security-scoped bookmark.
-5. Use `Product > Archive` ou rode o app diretamente pelo Xcode.
+1. Open the project in Xcode.
+2. Select the `Codex Status Bar` target.
+3. Confirm that `Application is agent (UIElement)` / `LSUIElement` is set to `YES`.
+4. For local usage with `codex app-server` and `~/.codex/sessions`, disable `App Sandbox` or implement a folder permission flow with security-scoped bookmarks.
+5. Use `Product > Archive` or run the app directly from Xcode.
 
-Tambem e possivel gerar por linha de comando com assinatura ad-hoc:
+You can also create an ad-hoc command-line build:
 
 ```sh
 xcodebuild \
@@ -137,16 +137,16 @@ xcodebuild \
   build
 ```
 
-## Limitacoes Atuais
+## Current Limitations
 
-- A build pronta e apenas arm64.
-- A leitura direta depende do executavel `codex` estar instalado em um caminho que o app consiga encontrar, como `/opt/homebrew/bin/codex`, `/usr/local/bin/codex`, `~/.local/bin/codex` ou `~/.codex/bin/codex`.
-- Com App Sandbox ativo, o app pode nao conseguir executar `codex app-server` nem ler `~/.codex/sessions`.
-- Ainda nao ha tela para escolher a pasta `.codex` e salvar permissao persistente.
+- The included build is arm64 only.
+- Live reads require the `codex` executable to be installed in a path the app can find, such as `/opt/homebrew/bin/codex`, `/usr/local/bin/codex`, `~/.local/bin/codex`, or `~/.codex/bin/codex`.
+- With App Sandbox enabled, the app may not be able to execute `codex app-server` or read `~/.codex/sessions`.
+- There is no UI yet to choose the `.codex` folder and store persistent permission.
 
-## Proximos Passos Possiveis
+## Possible Next Steps
 
-- Adicionar seletor de pasta `.codex` com security-scoped bookmark.
-- Criar build universal `arm64 + x86_64`.
-- Adicionar configuracao manual do caminho do executavel `codex`.
-- Criar GitHub Release com o zip anexado.
+- Add a `.codex` folder picker with a security-scoped bookmark.
+- Create a universal `arm64 + x86_64` build.
+- Add manual configuration for the `codex` executable path.
+- Create a GitHub Release and attach the zip there.

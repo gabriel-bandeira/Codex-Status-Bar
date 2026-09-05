@@ -79,22 +79,22 @@ final class CodexStatusBarAppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let data = codexManager.data
 
-        menu.addItem(disabledTitle: "Restante 5h: \(formattedPercentage(data.remainingPercentage5h))")
-        menu.addItem(disabledTitle: "Renova em \(data.timeUntil5hRenewal)")
-        menu.addItem(disabledTitle: "Horario local: \(data.local5hRenewalTime)")
+        menu.addItem(disabledTitle: "5-hour remaining: \(formattedPercentage(data.remainingPercentage5h))")
+        menu.addItem(disabledTitle: "Renews in \(data.timeUntil5hRenewal)")
+        menu.addItem(disabledTitle: "Local renewal: \(data.local5hRenewalTime)")
         menu.addItem(.separator())
-        menu.addItem(disabledTitle: "Restante semanal: \(formattedPercentage(data.remainingPercentageWeekly))")
-        menu.addItem(disabledTitle: "Renova em \(data.timeUntilWeeklyRenewal)")
-        menu.addItem(disabledTitle: "Horario local: \(data.localWeeklyRenewalTime)")
+        menu.addItem(disabledTitle: "Weekly remaining: \(formattedPercentage(data.remainingPercentageWeekly))")
+        menu.addItem(disabledTitle: "Renews in \(data.timeUntilWeeklyRenewal)")
+        menu.addItem(disabledTitle: "Local renewal: \(data.localWeeklyRenewalTime)")
         menu.addItem(.separator())
-        menu.addItem(disabledTitle: "Fonte: \(data.sourceDescription)")
+        menu.addItem(disabledTitle: "Source: \(data.sourceDescription)")
 
         if let updatedAt = data.updatedAt {
-            menu.addItem(disabledTitle: "Atualizado em \(Self.formattedUpdateDate(updatedAt))")
+            menu.addItem(disabledTitle: "Updated at \(Self.formattedUpdateDate(updatedAt))")
         }
 
         if let staleSeconds = data.staleSeconds {
-            menu.addItem(disabledTitle: "Dados locais: atualizado ha \(Self.formattedStaleTime(staleSeconds))")
+            menu.addItem(disabledTitle: "Local snapshot: \(Self.formattedStaleTime(staleSeconds)) old")
         }
 
         if let lastErrorMessage = codexManager.lastErrorMessage {
@@ -105,7 +105,7 @@ final class CodexStatusBarAppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         let launchItem = NSMenuItem(
-            title: "Abrir ao iniciar",
+            title: "Open at Login",
             action: #selector(toggleLaunchAtLogin(_:)),
             keyEquivalent: ""
         )
@@ -120,7 +120,7 @@ final class CodexStatusBarAppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
-            title: "Fechar App",
+            title: "Quit App",
             action: #selector(quitApp),
             keyEquivalent: "q"
         )
@@ -169,7 +169,7 @@ final class CodexStatusBarAppDelegate: NSObject, NSApplicationDelegate {
 
             launchAtLoginErrorMessage = nil
         } catch {
-            launchAtLoginErrorMessage = "Nao foi possivel alterar inicio automatico"
+            launchAtLoginErrorMessage = "Unable to update launch at login"
         }
 
         refreshStatusItem()
@@ -208,7 +208,7 @@ struct CodexData: Decodable {
         localWeeklyRenewalTime: "--/-- --:--",
         staleSeconds: nil,
         updatedAt: nil,
-        sourceDescription: "Aguardando dados"
+        sourceDescription: "Waiting for data"
     )
 
     var fiveHourMenuBarTitle: String {
@@ -324,26 +324,26 @@ struct CodexStatusMenu: View {
     @State private var launchAtLoginErrorMessage: String?
 
     var body: some View {
-        Text("Restante 5h: \(data.remainingPercentage5h.formatted(.number.precision(.fractionLength(0))))%")
-        Text("Renova em \(data.timeUntil5hRenewal)")
-        Text("Horario local: \(data.local5hRenewalTime)")
+        Text("5-hour remaining: \(data.remainingPercentage5h.formatted(.number.precision(.fractionLength(0))))%")
+        Text("Renews in \(data.timeUntil5hRenewal)")
+        Text("Local renewal: \(data.local5hRenewalTime)")
 
         Divider()
 
-        Text("Restante semanal: \(data.remainingPercentageWeekly.formatted(.number.precision(.fractionLength(0))))%")
-        Text("Renova em \(data.timeUntilWeeklyRenewal)")
-        Text("Horario local: \(data.localWeeklyRenewalTime)")
+        Text("Weekly remaining: \(data.remainingPercentageWeekly.formatted(.number.precision(.fractionLength(0))))%")
+        Text("Renews in \(data.timeUntilWeeklyRenewal)")
+        Text("Local renewal: \(data.localWeeklyRenewalTime)")
 
         Divider()
 
-        Text("Fonte: \(data.sourceDescription)")
+        Text("Source: \(data.sourceDescription)")
 
         if let updatedAt = data.updatedAt {
-            Text("Atualizado em \(Self.formattedUpdateDate(updatedAt))")
+            Text("Updated at \(Self.formattedUpdateDate(updatedAt))")
         }
 
         if let staleSeconds = data.staleSeconds {
-            Text("Dados locais: atualizado ha \(Self.formattedStaleTime(staleSeconds))")
+            Text("Local snapshot: \(Self.formattedStaleTime(staleSeconds)) old")
         }
 
         if let lastErrorMessage {
@@ -353,7 +353,7 @@ struct CodexStatusMenu: View {
 
         Divider()
 
-        Toggle("Abrir ao iniciar", isOn: Binding(
+        Toggle("Open at Login", isOn: Binding(
             get: {
                 launchAtLoginEnabled
             },
@@ -368,7 +368,7 @@ struct CodexStatusMenu: View {
 
         Divider()
 
-        Button("Fechar App") {
+        Button("Quit App") {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
@@ -411,7 +411,7 @@ struct CodexStatusMenu: View {
             launchAtLoginErrorMessage = nil
         } catch {
             launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
-            launchAtLoginErrorMessage = "Nao foi possivel alterar inicio automatico"
+            launchAtLoginErrorMessage = "Unable to update launch at login"
         }
     }
 }
@@ -445,7 +445,7 @@ final class CodexManager: ObservableObject {
             self.data = try await usageProvider.readLatestUsage()
             lastErrorMessage = nil
         } catch {
-            lastErrorMessage = "Falha ao atualizar dados"
+            lastErrorMessage = "Unable to refresh data"
         }
     }
 }
@@ -633,17 +633,17 @@ enum CodexAppServerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .codexExecutableNotFound:
-            return "Executavel codex nao encontrado"
+            return "codex executable not found"
         case .requestRejected(let message):
-            return "codex app-server rejeitou a leitura: \(message)"
+            return "codex app-server rejected the request: \(message)"
         case .missingResult:
-            return "codex app-server nao retornou result"
+            return "codex app-server did not return result"
         case .missingRateLimits:
-            return "codex app-server nao retornou rate_limits"
+            return "codex app-server did not return rate_limits"
         case .timeout:
-            return "codex app-server nao respondeu a tempo"
+            return "codex app-server timed out"
         case .noResponse(let message):
-            return "codex app-server nao retornou resposta: \(message)"
+            return "codex app-server did not return a response: \(message)"
         }
     }
 }
@@ -743,7 +743,7 @@ struct CodexRolloutProvider {
             weekly: weekly,
             staleSeconds: staleSeconds,
             updatedAt: latestSnapshot.eventDate,
-            sourceDescription: "Snapshot local"
+            sourceDescription: "Local snapshot"
         )
     }
 
@@ -903,9 +903,9 @@ enum CodexRolloutError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .sessionsDirectoryUnavailable:
-            return "Diretorio ~/.codex/sessions indisponivel"
+            return "~/.codex/sessions directory is unavailable"
         case .noRateLimitsSnapshot:
-            return "Nenhum snapshot rate_limits encontrado"
+            return "No rate_limits snapshot found"
         }
     }
 }
@@ -916,7 +916,7 @@ enum CodexRolloutError: LocalizedError {
         data: CodexData(remainingPercentage5h: 25, timeUntil5hRenewal: "02:15:00", local5hRenewalTime: "23:15",
                         remainingPercentageWeekly: 48, timeUntilWeeklyRenewal: "2 dias",
                         localWeeklyRenewalTime: "28/10 14:00", staleSeconds: 120, updatedAt: Date(),
-                        sourceDescription: "Snapshot local"),
+                        sourceDescription: "Local snapshot"),
         lastErrorMessage: nil
     )
 }
