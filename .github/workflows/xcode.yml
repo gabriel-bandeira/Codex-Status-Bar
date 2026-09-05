@@ -3,8 +3,12 @@ name: Xcode
 on:
   push:
     branches: ["main"]
+    tags: ["v*"]
   pull_request:
     branches: ["main"]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -57,6 +61,16 @@ jobs:
           name: Codex-Status-Bar-local-arm64
           path: artifacts/Codex-Status-Bar-local-arm64.zip
           if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "artifacts/Codex-Status-Bar-local-arm64.zip" \
+            --title "Codex Status Bar ${GITHUB_REF_NAME}" \
+            --notes "Local ad-hoc Apple Silicon build. This app is not notarized; macOS may require manual approval on first launch."
 
       - name: Analyze
         run: |

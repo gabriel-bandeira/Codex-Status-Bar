@@ -63,9 +63,9 @@ The app does not send prompts, start conversations, or ask a model to generate t
 
 The live read uses `account/rateLimits/read` through `codex app-server`, which reads account limit metadata. The fallback only reads local `rollout-*.jsonl` files. The expected behavior is that the app does not consume Codex tokens; it only reads or reuses limit information.
 
-## Install the CI Build
+## Install the Release Build
 
-Every push to `main` creates a downloadable GitHub Actions artifact:
+Tagged versions include a downloadable GitHub Release asset:
 
 ```text
 Codex-Status-Bar-local-arm64.zip
@@ -75,13 +75,15 @@ This build is for Apple Silicon Macs.
 
 To install it:
 
-1. Open the latest successful workflow run in the repository's `Actions` tab.
-2. Download the `Codex-Status-Bar-local-arm64` artifact.
+1. Open the repository's `Releases` page.
+2. Download `Codex-Status-Bar-local-arm64.zip` from the latest release.
 3. Extract the archive.
 4. Move `Codex Status Bar.app` to `/Applications`.
 5. Right-click the app and choose `Open` the first time.
 6. If macOS blocks the app, open `System Settings > Privacy & Security` and click `Open Anyway`.
 7. After the app opens, use the menu bar dropdown and enable `Open at Login`.
+
+Every push and pull request also creates a GitHub Actions artifact for validation builds, but Releases are the recommended download path.
 
 ## Launch at Login
 
