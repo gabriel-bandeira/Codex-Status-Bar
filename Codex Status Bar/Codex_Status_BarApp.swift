@@ -26,24 +26,28 @@ struct Codex_Status_BarApp: App {
 }
 
 struct CodexData: Decodable {
-    let percentage5h: Double
+    let remainingPercentage5h: Double
     let timeUntil5hRenewal: String
     let local5hRenewalTime: String
-    let percentageWeekly: Double
+    let remainingPercentageWeekly: Double
     let timeUntilWeeklyRenewal: String
     let localWeeklyRenewalTime: String
+    let staleSeconds: Int?
+    let updatedAt: Date?
 
     static let placeholder = CodexData(
-        percentage5h: 0,
+        remainingPercentage5h: 0,
         timeUntil5hRenewal: "--:--",
         local5hRenewalTime: "--:--",
-        percentageWeekly: 0,
+        remainingPercentageWeekly: 0,
         timeUntilWeeklyRenewal: "--",
-        localWeeklyRenewalTime: "--/-- --:--"
+        localWeeklyRenewalTime: "--/-- --:--",
+        staleSeconds: nil,
+        updatedAt: nil
     )
 
     var menuBarTitle: String {
-        "\(formattedPercentage(percentage5h)) | \(formattedPercentage(percentageWeekly))"
+        "5h \(formattedPercentage(remainingPercentage5h)) | Sem \(formattedPercentage(remainingPercentageWeekly))"
     }
 
     private func formattedPercentage(_ value: Double) -> String {
@@ -57,15 +61,21 @@ struct CodexLimitWindow {
 }
 
 extension CodexData {
-    nonisolated init(fiveHour: CodexLimitWindow, weekly: CodexLimitWindow) {
+    nonisolated init(fiveHour: CodexLimitWindow, weekly: CodexLimitWindow, staleSeconds: Int?, updatedAt: Date) {
         self.init(
-            percentage5h: fiveHour.usedPercent,
+            remainingPercentage5h: Self.remainingPercentage(fromUsedPercentage: fiveHour.usedPercent),
             timeUntil5hRenewal: fiveHour.resetsIn,
             local5hRenewalTime: fiveHour.localRenewalTime,
-            percentageWeekly: weekly.usedPercent,
+            remainingPercentageWeekly: Self.remainingPercentage(fromUsedPercentage: weekly.usedPercent),
             timeUntilWeeklyRenewal: weekly.resetsIn,
-            localWeeklyRenewalTime: weekly.localRenewalTime
+            localWeeklyRenewalTime: weekly.localRenewalTime,
+            staleSeconds: staleSeconds,
+            updatedAt: updatedAt
         )
+    }
+
+    private nonisolated static func remainingPercentage(fromUsedPercentage usedPercentage: Double) -> Double {
+        min(max(100 - usedPercentage, 0), 100)
     }
 }
 
@@ -134,15 +144,24 @@ struct CodexStatusMenu: View {
     @State private var launchAtLoginErrorMessage: String?
 
     var body: some View {
-        Text("Consumo 5h: \(data.percentage5h.formatted(.number.precision(.fractionLength(0))))%")
+        Text("Restante 5h: \(data.remainingPercentage5h.formatted(.number.precision(.fractionLength(0))))%")
         Text("Renova em \(data.timeUntil5hRenewal)")
         Text("Horario local: \(data.local5hRenewalTime)")
 
         Divider()
 
-        Text("Consumo semanal: \(data.percentageWeekly.formatted(.number.precision(.fractionLength(0))))%")
+        Text("Restante semanal: \(data.remainingPercentageWeekly.formatted(.number.precision(.fractionLength(0))))%")
         Text("Renova em \(data.timeUntilWeeklyRenewal)")
         Text("Horario local: \(data.localWeeklyRenewalTime)")
+
+        if let updatedAt = data.updatedAt {
+            Divider()
+            Text("Atualizado em \(Self.formattedUpdateDate(updatedAt))")
+        }
+
+        if let staleSeconds = data.staleSeconds {
+            Text("Dados locais: atualizado ha \(Self.formattedStaleTime(staleSeconds))")
+        }
 
         if let lastErrorMessage {
             Divider()
@@ -172,6 +191,31 @@ struct CodexStatusMenu: View {
         .keyboardShortcut("q")
     }
 
+    private static func formattedStaleTime(_ seconds: Int) -> String {
+        if seconds < 60 {
+            return "\(seconds)s"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "\(minutes)m"
+        }
+
+        return "\(minutes / 60)h"
+    }
+
+    private static func formattedUpdateDate(_ date: Date) -> String {
+        date.formatted(
+            .dateTime
+                .year()
+                .month(.twoDigits)
+                .day(.twoDigits)
+                .hour(.twoDigits(amPM: .omitted))
+                .minute(.twoDigits)
+                .second(.twoDigits)
+        )
+    }
+
     private func updateLaunchAtLogin(_ isEnabled: Bool) {
         do {
             if isEnabled {
@@ -194,7 +238,7 @@ final class CodexManager: ObservableObject {
     @Published private(set) var data: CodexData = .placeholder
     @Published private(set) var lastErrorMessage: String?
 
-    private let rolloutProvider = CodexRolloutProvider()
+    private let usageProvider = CodexUsageProvider()
     private var timer: Timer?
 
     init() {
@@ -215,11 +259,257 @@ final class CodexManager: ObservableObject {
 
     func fetchCodexData() async {
         do {
-            self.data = try await rolloutProvider.readLatestUsage()
+            self.data = try await usageProvider.readLatestUsage()
             lastErrorMessage = nil
         } catch {
             lastErrorMessage = "Falha ao atualizar dados"
         }
+    }
+}
+
+struct CodexUsageProvider {
+    private let appServerProvider = CodexAppServerProvider()
+    private let rolloutProvider = CodexRolloutProvider()
+
+    nonisolated func readLatestUsage() async throws -> CodexData {
+        do {
+            return try await appServerProvider.readLatestUsage()
+        } catch {
+            return try await rolloutProvider.readLatestUsage()
+        }
+    }
+}
+
+struct CodexAppServerProvider {
+    private let timeout: TimeInterval = 20
+
+    nonisolated func readLatestUsage() async throws -> CodexData {
+        try await Task.detached(priority: .utility) {
+            try readLatestUsageSynchronously()
+        }
+        .value
+    }
+
+    private nonisolated func readLatestUsageSynchronously() throws -> CodexData {
+        let executableURL = try codexExecutableURL()
+        let response = try appServerResponse(from: executableURL)
+
+        if let error = response["error"] {
+            throw CodexAppServerError.requestRejected(String(describing: error))
+        }
+
+        guard let result = response["result"] as? [String: Any] else {
+            throw CodexAppServerError.missingResult
+        }
+
+        let rateLimits = CodexJSON.pickDictionary(from: result, keys: ["rateLimits", "rate_limits"]) ?? result
+        let snapshotDate = Date()
+
+        guard let fiveHour = CodexJSON.window(from: rateLimits["primary"], snapshotDate: snapshotDate),
+              let weekly = CodexJSON.window(from: rateLimits["secondary"], snapshotDate: snapshotDate) else {
+            throw CodexAppServerError.missingRateLimits
+        }
+
+        return CodexData(fiveHour: fiveHour, weekly: weekly, staleSeconds: nil, updatedAt: snapshotDate)
+    }
+
+    private nonisolated func codexExecutableURL() throws -> URL {
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+        let pathValues = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+
+        let candidatePaths = pathValues.map { "\($0)/codex" } + [
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            homeDirectory.appending(path: ".local/bin/codex").path(),
+            homeDirectory.appending(path: ".codex/bin/codex").path()
+        ]
+
+        for path in candidatePaths where FileManager.default.isExecutableFile(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+
+        throw CodexAppServerError.codexExecutableNotFound
+    }
+
+    private nonisolated func appServerResponse(from executableURL: URL) throws -> [String: Any] {
+        let process = Process()
+        let standardInput = Pipe()
+        let standardOutput = Pipe()
+        let standardError = Pipe()
+        let responseBuffer = AppServerResponseBuffer(responseID: 2)
+        let responseSemaphore = DispatchSemaphore(value: 0)
+
+        process.executableURL = executableURL
+        process.arguments = ["app-server"]
+        process.standardInput = standardInput
+        process.standardOutput = standardOutput
+        process.standardError = standardError
+
+        standardOutput.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                responseSemaphore.signal()
+                return
+            }
+
+            if responseBuffer.append(data) {
+                responseSemaphore.signal()
+            }
+        }
+
+        try process.run()
+
+        let requests = [
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"codex-status-bar","title":"Codex Status Bar","version":"0.1.0"}}}"#,
+            #"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+            #"{"jsonrpc":"2.0","id":2,"method":"account/rateLimits/read","params":{}}"#
+        ].joined(separator: "\n") + "\n"
+
+        standardInput.fileHandleForWriting.write(Data(requests.utf8))
+
+        let result = responseSemaphore.wait(timeout: .now() + timeout)
+        standardOutput.fileHandleForReading.readabilityHandler = nil
+
+        try? standardInput.fileHandleForWriting.close()
+        if process.isRunning {
+            process.terminate()
+        }
+        process.waitUntilExit()
+
+        guard result == .success else {
+            throw CodexAppServerError.timeout
+        }
+
+        if let response = responseBuffer.response() {
+            return response
+        }
+
+        let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+        let errorMessage = String(data: errorData, encoding: .utf8) ?? ""
+        throw CodexAppServerError.noResponse(errorMessage)
+    }
+}
+
+final class AppServerResponseBuffer: @unchecked Sendable {
+    private let responseID: Int
+    private let lock = NSLock()
+    nonisolated(unsafe) private var textBuffer = ""
+    nonisolated(unsafe) private var matchedResponse: [String: Any]?
+
+    nonisolated init(responseID: Int) {
+        self.responseID = responseID
+    }
+
+    nonisolated func append(_ data: Data) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        textBuffer += String(data: data, encoding: .utf8) ?? ""
+
+        while let newlineIndex = textBuffer.firstIndex(of: "\n") {
+            let line = String(textBuffer[..<newlineIndex])
+            textBuffer.removeSubrange(...newlineIndex)
+
+            guard let lineData = line.data(using: .utf8),
+                  let message = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  message["id"] as? Int == responseID else {
+                continue
+            }
+
+            matchedResponse = message
+            return true
+        }
+
+        return false
+    }
+
+    nonisolated func response() -> [String: Any]? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return matchedResponse
+    }
+}
+
+enum CodexAppServerError: LocalizedError {
+    case codexExecutableNotFound
+    case requestRejected(String)
+    case missingResult
+    case missingRateLimits
+    case timeout
+    case noResponse(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .codexExecutableNotFound:
+            return "Executavel codex nao encontrado"
+        case .requestRejected(let message):
+            return "codex app-server rejeitou a leitura: \(message)"
+        case .missingResult:
+            return "codex app-server nao retornou result"
+        case .missingRateLimits:
+            return "codex app-server nao retornou rate_limits"
+        case .timeout:
+            return "codex app-server nao respondeu a tempo"
+        case .noResponse(let message):
+            return "codex app-server nao retornou resposta: \(message)"
+        }
+    }
+}
+
+enum CodexJSON {
+    nonisolated static func window(from value: Any?, snapshotDate: Date) -> CodexLimitWindow? {
+        guard let object = value as? [String: Any],
+              let usedPercent = pickDouble(from: object, keys: ["usedPercent", "used_percent", "percent"]) else {
+            return nil
+        }
+
+        let resetsAt = pickResetDate(from: object, snapshotDate: snapshotDate)
+        return CodexLimitWindow(usedPercent: usedPercent, resetsAt: resetsAt)
+    }
+
+    nonisolated static func pickDictionary(from object: [String: Any], keys: [String]) -> [String: Any]? {
+        keys.compactMap { object[$0] as? [String: Any] }.first
+    }
+
+    private nonisolated static func pickResetDate(from object: [String: Any], snapshotDate: Date) -> String? {
+        if let resetsAt = pickString(from: object, keys: ["resetsAt", "resets_at"]) {
+            return resetsAt
+        }
+
+        if let resetEpoch = pickDouble(from: object, keys: ["resetsAt", "resets_at"]) {
+            let seconds = resetEpoch > 1_000_000_000_000 ? resetEpoch / 1_000 : resetEpoch
+            return Date(timeIntervalSince1970: seconds).ISO8601Format()
+        }
+
+        if let resetsInSeconds = pickDouble(from: object, keys: ["resetsInSeconds", "resets_in_seconds"]) {
+            return snapshotDate.addingTimeInterval(resetsInSeconds).ISO8601Format()
+        }
+
+        return nil
+    }
+
+    private nonisolated static func pickString(from object: [String: Any], keys: [String]) -> String? {
+        keys.compactMap { object[$0] as? String }.first
+    }
+
+    private nonisolated static func pickDouble(from object: [String: Any], keys: [String]) -> Double? {
+        for key in keys {
+            switch object[key] {
+            case let value as Double:
+                return value
+            case let value as Int:
+                return Double(value)
+            case let value as String:
+                return Double(value)
+            default:
+                continue
+            }
+        }
+
+        return nil
     }
 }
 
@@ -240,23 +530,34 @@ struct CodexRolloutProvider {
     }
 
     private nonisolated func readLatestUsageSynchronously() throws -> CodexData {
-        for fileURL in try recentRolloutFiles() {
-            guard let rateLimits = try latestRateLimitsSnapshot(in: fileURL) else {
+        var latestSnapshot: (eventDate: Date, rateLimits: [String: Any])?
+
+        for file in try recentRolloutFiles() {
+            guard let snapshot = try latestRateLimitsSnapshot(in: file.url, fileModificationDate: file.modificationDate) else {
                 continue
             }
 
-            guard let fiveHour = window(from: rateLimits["primary"]),
-                  let weekly = window(from: rateLimits["secondary"]) else {
-                continue
+            if latestSnapshot == nil || snapshot.eventDate > latestSnapshot!.eventDate {
+                latestSnapshot = snapshot
             }
-
-            return CodexData(fiveHour: fiveHour, weekly: weekly)
         }
 
-        throw CodexRolloutError.noRateLimitsSnapshot
+        guard let latestSnapshot,
+              let fiveHour = window(from: latestSnapshot.rateLimits["primary"], snapshotDate: latestSnapshot.eventDate),
+              let weekly = window(from: latestSnapshot.rateLimits["secondary"], snapshotDate: latestSnapshot.eventDate) else {
+            throw CodexRolloutError.noRateLimitsSnapshot
+        }
+
+        let staleSeconds = max(0, Int(Date().timeIntervalSince(latestSnapshot.eventDate)))
+        return CodexData(
+            fiveHour: fiveHour,
+            weekly: weekly,
+            staleSeconds: staleSeconds,
+            updatedAt: latestSnapshot.eventDate
+        )
     }
 
-    private nonisolated func recentRolloutFiles() throws -> [URL] {
+    private nonisolated func recentRolloutFiles() throws -> [(url: URL, modificationDate: Date)] {
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsDirectory,
             includingPropertiesForKeys: [.contentModificationDateKey],
@@ -286,10 +587,13 @@ struct CodexRolloutProvider {
         return files
             .sorted { $0.modificationDate > $1.modificationDate }
             .prefix(maxFiles)
-            .map(\.url)
+            .map { $0 }
     }
 
-    private nonisolated func latestRateLimitsSnapshot(in fileURL: URL) throws -> [String: Any]? {
+    private nonisolated func latestRateLimitsSnapshot(
+        in fileURL: URL,
+        fileModificationDate: Date
+    ) throws -> (eventDate: Date, rateLimits: [String: Any])? {
         let contents = try String(contentsOf: fileURL, encoding: .utf8)
 
         for line in contents.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
@@ -300,7 +604,7 @@ struct CodexRolloutProvider {
                 continue
             }
 
-            return rateLimits
+            return (eventDate(from: object, fallback: fileModificationDate), rateLimits)
         }
 
         return nil
@@ -326,17 +630,17 @@ struct CodexRolloutProvider {
         return nil
     }
 
-    private nonisolated func window(from value: Any?) -> CodexLimitWindow? {
+    private nonisolated func window(from value: Any?, snapshotDate: Date) -> CodexLimitWindow? {
         guard let object = value as? [String: Any],
               let usedPercent = pickDouble(from: object, keys: ["usedPercent", "used_percent", "percent"]) else {
             return nil
         }
 
-        let resetsAt = pickResetDate(from: object)
+        let resetsAt = pickResetDate(from: object, snapshotDate: snapshotDate)
         return CodexLimitWindow(usedPercent: usedPercent, resetsAt: resetsAt)
     }
 
-    private nonisolated func pickResetDate(from object: [String: Any]) -> String? {
+    private nonisolated func pickResetDate(from object: [String: Any], snapshotDate: Date) -> String? {
         if let resetsAt = pickString(from: object, keys: ["resetsAt", "resets_at"]) {
             return resetsAt
         }
@@ -347,10 +651,33 @@ struct CodexRolloutProvider {
         }
 
         if let resetsInSeconds = pickDouble(from: object, keys: ["resetsInSeconds", "resets_in_seconds"]) {
-            return Date(timeIntervalSinceNow: resetsInSeconds).ISO8601Format()
+            return snapshotDate.addingTimeInterval(resetsInSeconds).ISO8601Format()
         }
 
         return nil
+    }
+
+    private nonisolated func eventDate(from object: [String: Any], fallback: Date) -> Date {
+        let payload = object["payload"] as? [String: Any]
+        let timestamp = object["timestamp"] ?? payload?["timestamp"]
+
+        if let timestamp = timestamp as? String,
+           let date = ISO8601DateFormatter.codexDate(from: timestamp) {
+            return date
+        }
+
+        if let timestamp = timestamp as? Double {
+            let seconds = timestamp > 1_000_000_000_000 ? timestamp / 1_000 : timestamp
+            return Date(timeIntervalSince1970: seconds)
+        }
+
+        if let timestamp = timestamp as? Int {
+            let value = Double(timestamp)
+            let seconds = value > 1_000_000_000_000 ? value / 1_000 : value
+            return Date(timeIntervalSince1970: seconds)
+        }
+
+        return fallback
     }
 
     private nonisolated func pickDictionary(from object: [String: Any], keys: [String]) -> [String: Any]? {
@@ -396,8 +723,9 @@ enum CodexRolloutError: LocalizedError {
 #if DEBUG
 #Preview {
     CodexStatusMenu(
-        data: CodexData(percentage5h: 45, timeUntil5hRenewal: "02:15:00", local5hRenewalTime: "23:15",
-                        percentageWeekly: 80, timeUntilWeeklyRenewal: "2 dias", localWeeklyRenewalTime: "28/10 14:00"),
+        data: CodexData(remainingPercentage5h: 25, timeUntil5hRenewal: "02:15:00", local5hRenewalTime: "23:15",
+                        remainingPercentageWeekly: 48, timeUntilWeeklyRenewal: "2 dias",
+                        localWeeklyRenewalTime: "28/10 14:00", staleSeconds: 120, updatedAt: Date()),
         lastErrorMessage: nil
     )
 }

@@ -1,44 +1,65 @@
 # Codex Status Bar
 
-Aplicativo nativo para macOS que mostra o uso dos limites do Codex diretamente na barra de menus.
+Aplicativo nativo para macOS que mostra os limites restantes do Codex diretamente na barra de menus.
 
-O app exibe dois percentuais lado a lado:
+O app exibe dois percentuais restantes lado a lado:
 
 ```text
-45% | 80%
+5h 25% | Sem 48%
 ```
 
-O primeiro valor representa o consumo da janela de 5 horas. O segundo representa o consumo semanal.
+O primeiro valor representa o limite restante da janela de 5 horas. O segundo representa o limite semanal restante.
 
 ## Como Funciona
 
-O app nao usa API HTTP externa nesta versao. Ele le os arquivos locais do Codex em:
+O app nao usa API HTTP externa nesta versao. A cada 30 segundos, ele tenta ler os limites diretamente do Codex usando:
+
+```text
+codex app-server
+```
+
+Internamente, o app chama o metodo JSON-RPC:
+
+```text
+account/rateLimits/read
+```
+
+Se o executavel `codex` nao estiver disponivel ou a chamada direta falhar, o app usa fallback lendo snapshots locais em:
 
 ```text
 ~/.codex/sessions
 ```
 
-A cada 30 segundos, o app:
+Nesse fallback, ele:
 
 1. Procura arquivos recentes `rollout-*.jsonl`.
 2. Le os snapshots mais novos.
 3. Busca o objeto `rate_limits`.
 4. Mapeia `primary` como limite de 5 horas.
 5. Mapeia `secondary` como limite semanal.
-6. Atualiza os percentuais na barra de menus.
+6. Converte `used_percent` em percentual restante usando `100 - used_percent`.
+7. Atualiza os percentuais na barra de menus.
 
 No menu suspenso, o app mostra:
 
-- percentual consumido nas ultimas 5 horas;
+- percentual restante nas proximas 5 horas;
 - tempo restante ate renovar a janela de 5 horas;
 - horario local da renovacao de 5 horas;
-- percentual consumido na semana;
+- percentual restante na semana;
 - tempo restante ate renovar a janela semanal;
 - horario local da renovacao semanal;
+- data e hora local exata da informacao exibida;
+- idade do snapshot, quando o app estiver usando fallback local;
 - opcao `Abrir ao iniciar`;
 - opcao `Fechar App`.
 
-Importante: como a fonte atual e baseada em snapshots `rollout-*.jsonl`, os dados dependem de o Codex ter registrado snapshots recentes. Se nao houver snapshots recentes, o app mostra a mensagem de falha ao atualizar.
+Importante: quando a leitura vem de `codex app-server`, ela representa a informacao consultada naquele momento. Quando vem dos arquivos `rollout-*.jsonl`, ela representa o horario do snapshot local mostrado no menu como `Atualizado em ...`.
+
+## Consome Tokens?
+
+O app nao envia prompts, nao inicia uma conversa e nao pede geracao de texto ao modelo.
+
+A leitura direta usa `account/rateLimits/read` no `codex app-server`, que consulta metadados de limite da conta. O fallback apenas le arquivos locais `rollout-*.jsonl`. Portanto, a expectativa e que o app nao consuma tokens do Codex; ele apenas consulta ou reaproveita informacoes de limite ja registradas.
 
 ## Instalar Build Local
 
@@ -96,7 +117,7 @@ Para gerar uma build local pelo Xcode:
 1. Abra o projeto no Xcode.
 2. Selecione o target `Codex Status Bar`.
 3. Confirme que `Application is agent (UIElement)` / `LSUIElement` esta como `YES`.
-4. Para uso local lendo `~/.codex/sessions`, desative `App Sandbox` ou implemente permissao por pasta com security-scoped bookmark.
+4. Para uso local chamando `codex app-server` e lendo `~/.codex/sessions`, desative `App Sandbox` ou implemente permissao por pasta com security-scoped bookmark.
 5. Use `Product > Archive` ou rode o app diretamente pelo Xcode.
 
 Tambem e possivel gerar por linha de comando com assinatura ad-hoc:
@@ -117,13 +138,13 @@ xcodebuild \
 ## Limitacoes Atuais
 
 - A build pronta e apenas arm64.
-- A leitura atual usa snapshots locais do Codex, nao uma leitura live via `codex app-server`.
-- Com App Sandbox ativo, o app pode nao conseguir ler `~/.codex/sessions`.
+- A leitura direta depende do executavel `codex` estar instalado em um caminho que o app consiga encontrar.
+- Com App Sandbox ativo, o app pode nao conseguir executar `codex app-server` nem ler `~/.codex/sessions`.
 - Ainda nao ha tela para escolher a pasta `.codex` e salvar permissao persistente.
 
 ## Proximos Passos Possiveis
 
 - Adicionar seletor de pasta `.codex` com security-scoped bookmark.
 - Criar build universal `arm64 + x86_64`.
-- Adicionar fallback via `codex app-server`.
+- Adicionar configuracao manual do caminho do executavel `codex`.
 - Criar GitHub Release com o zip anexado.
